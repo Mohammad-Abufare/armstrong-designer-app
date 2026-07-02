@@ -107,6 +107,7 @@ export default function App(): React.JSX.Element {
   const [canGoBack, setCanGoBack] = useState(false);
   const [arBusy, setArBusy] = useState(false);
   const [arModelUri, setArModelUri] = useState<string | null>(null);
+  const [arKb, setArKb] = useState(0);
   const [mode, setMode] = useState<'web' | 'ar'>('web');
   const [webUri, setWebUri] = useState<string | null>(null);
 
@@ -153,6 +154,7 @@ export default function App(): React.JSX.Element {
       await FileSystem.writeAsStringAsync(path, b64, {
         encoding: FileSystem.EncodingType.Base64,
       });
+      setArKb(Math.round((b64.length * 3) / 4 / 1024));
       setArModelUri(path);
       setMode('ar');
     } catch (e) {
@@ -226,7 +228,7 @@ export default function App(): React.JSX.Element {
 
       {mode === 'ar' && arModelUri && (
         <View style={StyleSheet.absoluteFill}>
-          <ArScreen modelUri={arModelUri} onExit={() => setMode('web')} />
+          <ArScreen modelUri={arModelUri} modelKb={arKb} onExit={() => setMode('web')} />
         </View>
       )}
     </View>
