@@ -39,6 +39,31 @@ const INJECT = `
     s.innerHTML = 'body.mode-client #asbHeader{border-radius:0 !important;}';
     document.head.appendChild(s);
   }catch(e){}
+
+  // Export ONLY the building for AR — hide the scenic ground/background first, otherwise the huge
+  // ground plane (part of buildGroup) gets exported and fills the AR camera as a flat surface.
+  window.__armExportGLBBase64 = function(onOk, onErr){
+    onErr = onErr || function(){};
+    try{
+      if(!(window.THREE && window.THREE.GLTFExporter)){ onErr('3D exporter not loaded'); return; }
+      var src = window.buildGroup; if(!src){ onErr('no building yet'); return; }
+      var hidden = [];
+      [window.GROUND_MESH, window.SCENE_BG_GROUND, window.__groundGroup].forEach(function(m){
+        if(m && m.visible){ m.visible = false; hidden.push(m); }
+      });
+      var clone = src.clone(true);
+      hidden.forEach(function(m){ m.visible = true; });   // restore the live view immediately
+      clone.scale.multiplyScalar(0.3048); clone.updateMatrixWorld(true);   // feet -> metres
+      new window.THREE.GLTFExporter().parse(clone, function(glb){
+        try{
+          var bytes = new Uint8Array(glb), CH = 0x8000, bin = '';
+          for(var i=0;i<bytes.length;i+=CH){ bin += String.fromCharCode.apply(null, bytes.subarray(i, i+CH)); }
+          onOk(btoa(bin));
+        }catch(e){ onErr(''+e); }
+      }, {binary:true, onlyVisible:true});
+    }catch(e){ onErr(''+e); }
+  };
+
   document.addEventListener('click', function(e){
     var f = e.target && e.target.closest ? e.target.closest('#arFab') : null;
     if(!f) return;

@@ -2,9 +2,12 @@
  * Native AR screen (ARCore / ARKit) via @reactvision/react-viro.
  * Loads the building GLB (exported by the designer, piped from the WebView) and places it on a
  * tapped floor plane. Pinch = resize, twist = rotate, drag = move. Exit returns to the designer.
+ *
+ * The GLB is exported at real-world size (metres). We start it small (~1/10) so the whole building
+ * is visible when testing indoors; pinch out to reach full size on a real lot.
  */
 import React, {useRef, useState} from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Alert, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   Viro3DObject,
@@ -15,12 +18,16 @@ import {
   ViroDirectionalLight,
 } from '@reactvision/react-viro';
 
-// The scene receives data through sceneNavigator.viroAppProps.
+const START = 0.1; // initial scale of the real-size model so the whole building is visible
+
 function ARScene(props: any): React.JSX.Element {
-  const modelUri: string | undefined = props?.sceneNavigator?.viroAppProps?.modelUri;
-  const [scale, setScale] = useState<[number, number, number]>([1, 1, 1]);
+  const appProps = props?.sceneNavigator?.viroAppProps || {};
+  const modelUri: string | undefined = appProps.modelUri;
+  const onErr: ((m: string) => void) | undefined = appProps.onErr;
+
+  const [scale, setScale] = useState<[number, number, number]>([START, START, START]);
   const [rotY, setRotY] = useState(0);
-  const baseScale = useRef(1);
+  const baseScale = useRef(START);
   const baseRot = useRef(0);
 
   const onPinch = (state: number, factor: number) => {
@@ -42,8 +49,9 @@ function ARScene(props: any): React.JSX.Element {
 
   return (
     <ViroARScene>
-      <ViroAmbientLight color="#ffffff" intensity={280} />
-      <ViroDirectionalLight color="#ffffff" direction={[0, -1, -0.3]} />
+      <ViroAmbientLight color="#ffffff" intensity={600} />
+      <ViroDirectionalLight color="#ffffff" direction={[0, -1, -0.4]} intensity={1000} />
+      <ViroDirectionalLight color="#ffffff" direction={[0.4, -0.6, 0.6]} intensity={500} />
       <ViroARPlaneSelector>
         {modelUri ? (
           <Viro3DObject
@@ -56,6 +64,7 @@ function ARScene(props: any): React.JSX.Element {
             onDrag={() => {}}
             onPinch={onPinch}
             onRotate={onRotate}
+            onError={() => onErr && onErr('The building model failed to load.')}
           />
         ) : null}
       </ViroARPlaneSelector>
@@ -75,14 +84,17 @@ export default function ArScreen({
       <ViroARSceneNavigator
         autofocus
         initialScene={{scene: ARScene as any}}
-        viroAppProps={{modelUri}}
+        viroAppProps={{
+          modelUri,
+          onErr: (m: string) => Alert.alert('AR', m),
+        }}
         style={styles.fill}
       />
       <SafeAreaView style={styles.overlay} pointerEvents="box-none" edges={['top']}>
         <View style={styles.bar} pointerEvents="box-none">
           <View style={styles.hint}>
             <Text style={styles.hintText}>
-              Point at the floor and tap to place · pinch to resize · twist to rotate · drag to move
+              Point at the floor and tap to place · pinch out to enlarge · twist to rotate · drag to move
             </Text>
           </View>
           <TouchableOpacity style={styles.exit} onPress={onExit} activeOpacity={0.85}>
