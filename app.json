@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "default",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
     "backgroundColor": "#16275f",
     "primaryColor": "#16275f",
     "splash": {
