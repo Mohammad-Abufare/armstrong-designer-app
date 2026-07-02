@@ -22,6 +22,10 @@
     "android": {
       "package": "com.armstrongsteel.designer",
       "permissions": ["CAMERA", "INTERNET"]
-    }
+    },
+    "plugins": [
+      "@reactvision/react-viro",
+      ["expo-build-properties", {"android": {"minSdkVersion": 24}}]
+    ]
   }
 }

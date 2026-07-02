@@ -1,14 +1,16 @@
 /**
  * Armstrong 3D Designer — standalone test app (React Native + TypeScript / Expo).
  *
- * The designer engine runs inside a native WebView. Branded loading screen (Armstrong logo)
- * covers the first load. AR is NOT available in-app yet: WebXR cannot run inside a WebView, so
- * the in-page "View on my lot" button is hidden here — native AR (ARCore/ARKit) is a separate build.
+ * The designer runs inside a native WebView. The "View on my lot" button no longer tries WebXR
+ * (which can't run in a WebView). Instead it exports the current building to a GLB, hands it to the
+ * native side, and opens a real ARCore/ARKit screen (ArScreen) that places it in your space.
  */
 import React, {useCallback, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Alert,
   BackHandler,
+  Linking,
   Platform,
   StatusBar,
   StyleSheet,
@@ -16,26 +18,42 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {WebView} from 'react-native-webview';
+import {WebView, WebViewMessageEvent} from 'react-native-webview';
 import Svg, {Path, Rect} from 'react-native-svg';
+import * as FileSystem from 'expo-file-system';
+import {Asset} from 'expo-asset';
+import ArScreen from './ArScreen';
 
-// Re-upload the MOBILE folder to Netlify so this URL shows the latest designer build.
-const DESIGNER_URL = 'https://luxury-khapse-f893cc.netlify.app/';
+// The designer ships INSIDE the app (assets/designer.html, with Three.js embedded) and loads
+// locally — no Netlify, no CDN, works offline.
+const DESIGNER_HTML = require('./assets/designer.html');
 
 const NAVY = '#16275f';
 const GOLD = '#f5a623';
 
-// App-only CSS overrides (kept out of the website): square off the header's top corners for the
-// app frame, and show the AR button exactly like the website. The high-specificity #asbHeader
-// selector matches the site's own rule so it wins.
+// App-only tweaks + route the in-page "View on my lot" button to NATIVE AR.
 const INJECT = `
 (function(){
   try{
     var s = document.createElement('style');
-    s.innerHTML =
-      'body.mode-client #asbHeader{border-radius:0 !important;}';
+    s.innerHTML = 'body.mode-client #asbHeader{border-radius:0 !important;}';
     document.head.appendChild(s);
   }catch(e){}
+  document.addEventListener('click', function(e){
+    var f = e.target && e.target.closest ? e.target.closest('#arFab') : null;
+    if(!f) return;
+    e.preventDefault(); e.stopPropagation();
+    try{ window.ReactNativeWebView.postMessage(JSON.stringify({type:'AR_PREPARING'})); }catch(_){}
+    if(window.__armExportGLBBase64){
+      window.__armExportGLBBase64(function(b64){
+        window.ReactNativeWebView.postMessage(JSON.stringify({type:'AR_MODEL', data:b64}));
+      }, function(err){
+        window.ReactNativeWebView.postMessage(JSON.stringify({type:'AR_ERROR', error:''+err}));
+      });
+    } else {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'AR_ERROR', error:'Re-upload the designer to Netlify (AR export hook missing)'}));
+    }
+  }, true);
 })();
 true;
 `;
@@ -62,10 +80,30 @@ export default function App(): React.JSX.Element {
   const webRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
+  const [arBusy, setArBusy] = useState(false);
+  const [arModelUri, setArModelUri] = useState<string | null>(null);
+  const [mode, setMode] = useState<'web' | 'ar'>('web');
+  const [webUri, setWebUri] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const a = Asset.fromModule(DESIGNER_HTML);
+        await a.downloadAsync();
+        setWebUri(a.localUri || a.uri);
+      } catch {
+        Alert.alert('Designer', 'Could not load the designer.');
+      }
+    })();
+  }, []);
 
   React.useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (mode === 'ar') {
+        setMode('web');
+        return true;
+      }
       if (canGoBack && webRef.current) {
         webRef.current.goBack();
         return true;
@@ -73,43 +111,105 @@ export default function App(): React.JSX.Element {
       return false;
     });
     return () => sub.remove();
-  }, [canGoBack]);
+  }, [canGoBack, mode]);
 
   const onLoadEnd = useCallback(() => setLoading(false), []);
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={NAVY} />
-      <WebView
-        ref={webRef}
-        source={{uri: DESIGNER_URL}}
-        onLoadEnd={onLoadEnd}
-        onNavigationStateChange={s => setCanGoBack(s.canGoBack)}
-        injectedJavaScript={INJECT}
-        javaScriptEnabled
-        domStorageEnabled
-        cacheEnabled
-        cacheMode="LOAD_CACHE_ELSE_NETWORK"
-        androidLayerType="hardware"
-        allowsInlineMediaPlayback
-        mediaPlaybackRequiresUserAction={false}
-        originWhitelist={['*']}
-        setSupportMultipleWindows={false}
-        style={styles.web}
-      />
+  const onShouldStart = useCallback((req: {url: string}): boolean => {
+    const url = req.url || '';
+    if (/^(https?|about|data|blob|file):/i.test(url)) return true;
+    Linking.openURL(url).catch(() => {});
+    return false;
+  }, []);
 
-      {loading && (
-        <View style={styles.loader} pointerEvents="none">
-          <ArmstrongLogo />
-          <ActivityIndicator style={styles.spin} size="large" color={GOLD} />
-          <Text style={styles.loaderText}>Loading your designer…</Text>
+  const saveAndOpenAR = useCallback(async (b64: string) => {
+    try {
+      const path = FileSystem.cacheDirectory + 'armstrong-building.glb';
+      await FileSystem.writeAsStringAsync(path, b64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      setArModelUri(path);
+      setMode('ar');
+    } catch (e) {
+      Alert.alert('AR', 'Could not prepare the 3D model.');
+    } finally {
+      setArBusy(false);
+    }
+  }, []);
+
+  const onMessage = useCallback(
+    (e: WebViewMessageEvent) => {
+      let msg: any;
+      try {
+        msg = JSON.parse(e.nativeEvent.data);
+      } catch {
+        return;
+      }
+      if (!msg || !msg.type) return;
+      if (msg.type === 'AR_PREPARING') setArBusy(true);
+      else if (msg.type === 'AR_MODEL') saveAndOpenAR(msg.data);
+      else if (msg.type === 'AR_ERROR') {
+        setArBusy(false);
+        Alert.alert('AR', msg.error || 'Could not prepare AR.');
+      }
+    },
+    [saveAndOpenAR],
+  );
+
+  return (
+    <View style={styles.root}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <StatusBar barStyle="light-content" backgroundColor={NAVY} />
+        {webUri && (
+          <WebView
+            ref={webRef}
+            source={{uri: webUri}}
+            onLoadEnd={onLoadEnd}
+            onNavigationStateChange={s => setCanGoBack(s.canGoBack)}
+            onShouldStartLoadWithRequest={onShouldStart}
+            onMessage={onMessage}
+            injectedJavaScript={INJECT}
+            javaScriptEnabled
+            domStorageEnabled
+            allowFileAccess
+            allowFileAccessFromFileURLs
+            allowUniversalAccessFromFileURLs
+            androidLayerType="hardware"
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            originWhitelist={['*']}
+            setSupportMultipleWindows={false}
+            style={styles.web}
+          />
+        )}
+
+        {(loading || !webUri) && (
+          <View style={styles.loader} pointerEvents="none">
+            <ArmstrongLogo />
+            <ActivityIndicator style={styles.spin} size="large" color={GOLD} />
+            <Text style={styles.loaderText}>Loading your designer…</Text>
+          </View>
+        )}
+
+        {arBusy && (
+          <View style={styles.loader}>
+            <ActivityIndicator size="large" color={GOLD} />
+            <Text style={styles.loaderText}>Preparing AR…</Text>
+          </View>
+        )}
+      </SafeAreaView>
+
+      {mode === 'ar' && arModelUri && (
+        <View style={StyleSheet.absoluteFill}>
+          <ArScreen modelUri={arModelUri} onExit={() => setMode('web')} />
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {flex: 1, backgroundColor: NAVY},
   safe: {flex: 1, backgroundColor: NAVY},
   web: {flex: 1, backgroundColor: '#eef1f6'},
   loader: {
