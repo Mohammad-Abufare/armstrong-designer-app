@@ -1,8 +1,5 @@
 name: Build Android APK
 
-# Builds an installable, standalone release APK in the cloud (no local tools needed).
-# Runs automatically on every push, and can be started by hand from the Actions tab.
-
 on:
   push:
     branches: ['**']
@@ -29,12 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Generate the native android/ project from the Expo config (includes react-native-webview autolinking).
       - name: Expo prebuild (android)
         run: npx expo prebuild --platform android --no-install --clean
 
-      # Release build: bundles the JS into the APK and signs it with the template debug keystore,
-      # so the .apk installs and runs on a phone with no dev server and no extra signing setup.
       - name: Build release APK
         run: |
           cd android
