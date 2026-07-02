@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Armstrong 3D Designer",
+    "slug": "armstrong-3d-designer",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#16275f",
+    "primaryColor": "#16275f",
+    "splash": {
+      "backgroundColor": "#16275f",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.armstrongsteel.designer",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used for the 'View on my lot' AR feature."
+      }
+    },
+    "android": {
+      "package": "com.armstrongsteel.designer",
+      "permissions": ["CAMERA", "INTERNET"]
+    },
+    "plugins": ["react-native-webview"]
+  }
+}
