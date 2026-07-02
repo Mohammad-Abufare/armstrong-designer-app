@@ -22,7 +22,6 @@
     "android": {
       "package": "com.armstrongsteel.designer",
       "permissions": ["CAMERA", "INTERNET"]
-    },
-    "plugins": ["react-native-webview"]
+    }
   }
 }
