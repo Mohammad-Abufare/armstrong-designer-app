@@ -25,12 +25,15 @@ const DESIGNER_URL = 'https://luxury-khapse-f893cc.netlify.app/';
 const NAVY = '#16275f';
 const GOLD = '#f5a623';
 
-// Hide the in-page AR button while running inside the app (WebXR can't run in a WebView).
+// App-only CSS overrides (kept out of the website): square off the header's top corners for the
+// app frame, and show the AR button exactly like the website. The high-specificity #asbHeader
+// selector matches the site's own rule so it wins.
 const INJECT = `
 (function(){
   try{
     var s = document.createElement('style');
-    s.innerHTML = '#arFab{display:none !important;}';
+    s.innerHTML =
+      'body.mode-client #asbHeader{border-radius:0 !important;}';
     document.head.appendChild(s);
   }catch(e){}
 })();
